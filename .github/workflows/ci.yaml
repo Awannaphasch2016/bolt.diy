@@ -88,3 +88,18 @@ jobs:
           echo "🐳 Validating docker-compose configuration..."
           docker compose config --quiet
           echo "✅ docker-compose configuration is valid"
+
+  project-image:
+    name: Project runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build project runtime image
+        run: docker build -t bolt-project:latest -f docker/project/Dockerfile docker/project
+
+      - name: Smoke test project runtime image
+        run: sh docker/project/smoke.sh bolt-project:latest

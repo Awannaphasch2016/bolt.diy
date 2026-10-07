@@ -1,0 +1,5 @@
+{
+  "name": "bolt-project",
+  "private": true,
+  "type": "module"
+}
