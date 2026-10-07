@@ -8,10 +8,26 @@ import { useSearchParams } from 'react-router';
 import { toast } from 'react-toastify';
 import { BaseChat } from './BaseChat';
 import type { ElementInfo } from '~/components/workbench/Inspector';
+import {
+  continuePrefill,
+  factoryPhaseChatMode,
+  factoryPhaseKickoff,
+  isFactoryPhaseUnlocked,
+  latestFactoryPhaseSummary,
+  nextFactoryPhase,
+  walkthroughPreviewVisible,
+} from '~/lib/factoryPhase';
+import {
+  factoryRunFromMetadata,
+  factoryRunToRestore,
+  progressForRun,
+  walkthroughPhase,
+  type FactoryRunRecord,
+} from '~/lib/factoryRun';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { useSettings } from '~/lib/hooks/useSettings';
-import { description, useChatHistory } from '~/lib/persistence';
-import { createMessage, getMessageText, type AnyPart } from '~/lib/persistence/messageMigration';
+import { description, useChatHistory, chatId, chatMetadata } from '~/lib/persistence';
+import { getMessageText, createMessage, type AnyPart } from '~/lib/persistence/messageMigration';
 import { chatStore } from '~/lib/stores/chat';
 import { logStore } from '~/lib/stores/logs';
 import { useMCPStore } from '~/lib/stores/mcp';
@@ -28,14 +44,13 @@ import { cubicEasingFn } from '~/utils/easings';
 import { filesToArtifacts } from '~/utils/fileUtils';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { createSampler } from '~/utils/sampler';
-import { getTemplates, selectStarterTemplate } from '~/utils/selectStarterTemplate';
 
 const logger = createScopedLogger('Chat');
 
 export function Chat() {
   renderLogger.trace('Chat');
 
-  const { ready, initialMessages, storeMessageHistory, importChat, exportChat } = useChatHistory();
+  const { ready, initialMessages, storeMessageHistory, importChat, exportChat, saveFactoryRun } = useChatHistory();
   const title = useStore(description);
   useEffect(() => {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
@@ -49,6 +64,7 @@ export function Chat() {
           initialMessages={initialMessages}
           exportChat={exportChat}
           storeMessageHistory={storeMessageHistory}
+          saveFactoryRun={saveFactoryRun}
           importChat={importChat}
         />
       )}
@@ -77,13 +93,14 @@ const processSampledMessages = createSampler(
 interface ChatProps {
   initialMessages: UIMessage[];
   storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
+  saveFactoryRun: (factory: FactoryRunRecord) => Promise<void>;
   importChat: (description: string, messages: UIMessage[]) => Promise<void>;
   exportChat: () => void;
   description?: string;
 }
 
 export const ChatImpl = memo(
-  ({ description, initialMessages, storeMessageHistory, importChat, exportChat }: ChatProps) => {
+  ({ description, initialMessages, storeMessageHistory, saveFactoryRun, importChat, exportChat }: ChatProps) => {
     useShortcuts();
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -103,7 +120,7 @@ export const ChatImpl = memo(
     );
 
     const supabaseAlert = useStore(workbenchStore.supabaseAlert);
-    const { activeProviders, promptId, autoSelectTemplate, contextOptimizationEnabled } = useSettings();
+    const { activeProviders, promptId, contextOptimizationEnabled } = useSettings();
     const [llmErrorAlert, setLlmErrorAlert] = useState<LlmErrorAlertType | undefined>(undefined);
 
     const [model, setModel] = useState(() => {
@@ -118,7 +135,16 @@ export const ChatImpl = memo(
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
-    const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
+    const [factoryRun, setFactoryRun] = useState(() => factoryRunFromMetadata(chatMetadata.get()));
+    const restoredChatId = useRef<string | undefined>(undefined);
+    const [approvalPending, setApprovalPending] = useState(false);
+    const phaseRef = useRef(factoryRun.phase);
+    phaseRef.current = factoryRun.phase;
+
+    const [chatMode, setChatMode] = useState<'discuss' | 'build'>(() =>
+      factoryPhaseChatMode(factoryRun.phase) === 'build' ? 'build' : 'discuss',
+    );
+
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
 
@@ -141,6 +167,7 @@ export const ChatImpl = memo(
       promptId,
       contextOptimization: contextOptimizationEnabled,
       chatMode,
+      factoryPhase: phaseRef.current,
       designScheme,
       supabase: {
         isConnected: supabaseConn.isConnected,
@@ -159,6 +186,7 @@ export const ChatImpl = memo(
       promptId,
       contextOptimization: contextOptimizationEnabled,
       chatMode,
+      factoryPhase: phaseRef.current,
       designScheme,
       supabase: {
         isConnected: supabaseConn.isConnected,
@@ -483,8 +511,7 @@ export const ChatImpl = memo(
         return;
       }
 
-      if (isLoading) {
-        abort();
+      if (isLoading || fakeLoading) {
         return;
       }
 
@@ -502,71 +529,6 @@ export const ChatImpl = memo(
       if (!chatStarted) {
         setFakeLoading(true);
 
-        if (autoSelectTemplate) {
-          const { template, title } = await selectStarterTemplate({
-            message: finalMessageContent,
-            model,
-            provider,
-          });
-
-          if (template !== 'blank') {
-            const temResp = await getTemplates(template, title).catch((e) => {
-              if (e.message.includes('rate limit')) {
-                toast.warning('Rate limit exceeded. Skipping starter template\n Continuing with blank template');
-              } else {
-                toast.warning('Failed to import starter template\n Continuing with blank template');
-              }
-
-              return null;
-            });
-
-            if (temResp) {
-              const { assistantMessage, userMessage } = temResp;
-              const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
-
-              setMessages([
-                {
-                  id: `1-${new Date().getTime()}`,
-                  role: 'user',
-                  content: userMessageText,
-                  parts: createMessageParts(userMessageText, imageDataList),
-                },
-                {
-                  id: `2-${new Date().getTime()}`,
-                  role: 'assistant',
-                  content: assistantMessage,
-                  parts: [{ type: 'text', text: assistantMessage }],
-                },
-                {
-                  id: `3-${new Date().getTime()}`,
-                  role: 'user',
-                  content: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userMessage}`,
-                  parts: [
-                    { type: 'text', text: `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${userMessage}` },
-                  ],
-                  annotations: ['hidden'],
-                  metadata: { flags: ['hidden'] },
-                },
-              ] as any);
-
-              void regenerate();
-              setInput('');
-              Cookies.remove(PROMPT_COOKIE_KEY);
-
-              setUploadedFiles([]);
-              setImageDataList([]);
-
-              resetEnhancer();
-
-              textareaRef.current?.blur();
-              setFakeLoading(false);
-
-              return;
-            }
-          }
-        }
-
-        // If autoSelectTemplate is disabled or template selection failed, proceed with normal message
         const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
         const fileParts = await filesToFileParts(uploadedFiles);
 
@@ -688,6 +650,97 @@ export const ChatImpl = memo(
       [input],
     );
 
+    useEffect(() => {
+      const restored = factoryRunToRestore(ready, chatId.get(), restoredChatId.current, chatMetadata.get());
+
+      if (!restored) {
+        return;
+      }
+
+      restoredChatId.current = restored.chatId;
+      setFactoryRun(restored.run);
+      setChatMode(factoryPhaseChatMode(restored.run.phase) === 'build' ? 'build' : 'discuss');
+    }, [ready, initialMessages]);
+
+    useEffect(() => {
+      walkthroughPhase.set(factoryRun.phase);
+      setChatMode(factoryPhaseChatMode(factoryRun.phase) === 'build' ? 'build' : 'discuss');
+
+      if (!walkthroughPreviewVisible(factoryRun.phase)) {
+        workbenchStore.showWorkbench.set(false);
+      }
+    }, [factoryRun.phase]);
+
+    const transcript = messages.map((message) => ({
+      role: message.role,
+      content: getMessageText(message),
+    }));
+
+    const phaseSummary = latestFactoryPhaseSummary(transcript, factoryRun.phase);
+    const progress = progressForRun(factoryRun, transcript.length > 0);
+
+    const selectPhase = (phase: FactoryRunRecord['phase']) => {
+      if (!isFactoryPhaseUnlocked(phase, progress)) {
+        return;
+      }
+
+      const nextRun = { ...factoryRun, phase };
+      setFactoryRun(nextRun);
+      void saveFactoryRun(nextRun);
+    };
+
+    const addComment = (body: string) => {
+      const nextRun = {
+        ...factoryRun,
+        comments: [...factoryRun.comments, { phase: factoryRun.phase, body }],
+      };
+      setFactoryRun(nextRun);
+      void saveFactoryRun(nextRun);
+    };
+
+    const approvePhase = async () => {
+      if (approvalPending || isLoading || fakeLoading) {
+        return;
+      }
+
+      const summary = latestFactoryPhaseSummary(transcript, factoryRun.phase);
+      const next = nextFactoryPhase(factoryRun.phase);
+
+      const approved = factoryRun.approved.includes(factoryRun.phase)
+        ? factoryRun.approved
+        : [...factoryRun.approved, factoryRun.phase];
+      const nextRun: FactoryRunRecord = {
+        ...factoryRun,
+        approved,
+        phase: next ?? factoryRun.phase,
+      };
+      setFactoryRun(nextRun);
+      void saveFactoryRun(nextRun);
+
+      if (!next) {
+        return;
+      }
+
+      const prompt = next === 'implementation' ? continuePrefill(next, summary) : factoryPhaseKickoff(next, summary);
+
+      if (!prompt) {
+        return;
+      }
+
+      const mode = factoryPhaseChatMode(next) === 'build' ? 'build' : 'discuss';
+      phaseRef.current = next;
+      bodyRef.current = { ...bodyRef.current, factoryPhase: next, chatMode: mode };
+      setChatMode(mode);
+      walkthroughPhase.set(next);
+      setApprovalPending(true);
+
+      try {
+        await sendMessage({} as React.UIEvent, prompt);
+      } finally {
+        setApprovalPending(false);
+      }
+    };
+
     return (
       <BaseChat
         ref={animationScope}
@@ -764,6 +817,18 @@ export const ChatImpl = memo(
         setSelectedElement={setSelectedElement}
         addToolOutput={addToolOutput}
         onWebSearchResult={handleWebSearchResult}
+        walkthrough={{
+          phase: factoryRun.phase,
+          progress,
+          phaseSummary,
+          comments: factoryRun.comments,
+          approvalPending,
+          onSelectPhase: selectPhase,
+          onApprove: () => {
+            void approvePhase();
+          },
+          onComment: addComment,
+        }}
       />
     );
   },

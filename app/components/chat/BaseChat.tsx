@@ -17,8 +17,11 @@ import { ExamplePrompts } from '~/components/chat/ExamplePrompts';
 import { SupabaseChatAlert } from '~/components/chat/SupabaseAlert';
 import { ImportButtons } from '~/components/chat/chatExportAndImport/ImportButtons';
 import DeployChatAlert from '~/components/deploy/DeployAlert';
+import { FactoryPhaseBar } from '~/components/factory/FactoryPhaseBar';
 import { Menu } from '~/components/sidebar/Menu.client';
 import type { ElementInfo } from '~/components/workbench/Inspector';
+import type { FactoryPhase } from '~/lib/factoryPhase';
+import type { FactoryPhaseComment } from '~/lib/factoryRun';
 
 const LazyWorkbench = lazy(() =>
   import('~/components/workbench/Workbench.client').then((m) => ({ default: m.Workbench })),
@@ -81,6 +84,19 @@ interface BaseChatProps {
   setSelectedElement?: (element: ElementInfo | null) => void;
   addToolOutput?: (options: { tool: string; toolCallId: string; output: unknown }) => void;
   onWebSearchResult?: (result: string) => void;
+  walkthrough?: {
+    phase: FactoryPhase;
+    progress: {
+      approved: ReadonlySet<FactoryPhase>;
+      started: ReadonlySet<FactoryPhase>;
+    };
+    phaseSummary: string | null;
+    comments: FactoryPhaseComment[];
+    approvalPending: boolean;
+    onSelectPhase: (phase: FactoryPhase) => void;
+    onApprove: () => void;
+    onComment: (body: string) => void;
+  };
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -131,6 +147,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         throw new Error('addToolOutput not implemented');
       },
       onWebSearchResult,
+      walkthrough,
     },
     ref,
   ) => {
@@ -341,7 +358,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         <ClientOnly>{() => <Menu />}</ClientOnly>
         <div className="flex flex-col lg:flex-row overflow-y-auto w-full h-full">
           <div className={classNames(styles.Chat, 'flex flex-col flex-grow lg:min-w-[var(--chat-min-width)] h-full')}>
-            {!chatStarted && (
+            {walkthrough && (
+              <FactoryPhaseBar
+                phase={walkthrough.phase}
+                progress={walkthrough.progress}
+                phaseSummary={walkthrough.phaseSummary}
+                isStreaming={isStreaming}
+                comments={walkthrough.comments}
+                approvalPending={walkthrough.approvalPending}
+                onSelectPhase={walkthrough.onSelectPhase}
+                onApprove={walkthrough.onApprove}
+                onComment={walkthrough.onComment}
+              />
+            )}
+            {!chatStarted && !walkthrough && (
               <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
                 <h1 className="text-3xl lg:text-6xl font-bold text-bolt-elements-textPrimary mb-4 animate-fade-in">
                   Where ideas begin
@@ -384,7 +414,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 })}
               >
                 <div className="flex flex-col gap-2">
-                  {deployAlert && (
+                  {deployAlert && !walkthrough && (
                     <DeployChatAlert
                       alert={deployAlert}
                       clearAlert={() => clearDeployAlert?.()}
@@ -394,7 +424,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       }}
                     />
                   )}
-                  {supabaseAlert && (
+                  {supabaseAlert && !walkthrough && (
                     <SupabaseChatAlert
                       alert={supabaseAlert}
                       clearAlert={() => clearSupabaseAlert?.()}
@@ -454,6 +484,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   handleFileUpload={handleFileUpload}
                   chatMode={chatMode}
                   setChatMode={setChatMode}
+                  walkthrough={Boolean(walkthrough)}
                   designScheme={designScheme}
                   setDesignScheme={setDesignScheme}
                   selectedElement={selectedElement}
@@ -463,7 +494,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
               </div>
             </StickToBottom>
             <div className="flex flex-col justify-center">
-              {!chatStarted && (
+              {!chatStarted && !walkthrough && (
                 <div className="flex justify-center gap-2">
                   {ImportButtons(importChat)}
                   <GitCloneButton importChat={importChat} />
@@ -471,6 +502,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
               )}
               <div className="flex flex-col gap-5">
                 {!chatStarted &&
+                  !walkthrough &&
                   ExamplePrompts((event, messageInput) => {
                     if (isStreaming) {
                       handleStop?.();
@@ -479,7 +511,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
 
                     handleSendMessage?.(event, messageInput);
                   })}
-                {!chatStarted && <StarterTemplates />}
+                {!chatStarted && !walkthrough && <StarterTemplates />}
               </div>
             </div>
           </div>

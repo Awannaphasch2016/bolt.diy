@@ -103,24 +103,34 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     },
   });
 
-  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps } =
-    await request.json<{
-      messages: Messages;
-      files: any;
-      promptId?: string;
-      contextOptimization: boolean;
-      chatMode: 'discuss' | 'build';
-      designScheme?: DesignScheme;
-      supabase?: {
-        isConnected: boolean;
-        hasSelectedProject: boolean;
-        credentials?: {
-          anonKey?: string;
-          supabaseUrl?: string;
-        };
+  const {
+    messages,
+    files,
+    promptId,
+    contextOptimization,
+    supabase,
+    chatMode,
+    factoryPhase,
+    designScheme,
+    maxLLMSteps,
+  } = await request.json<{
+    messages: Messages;
+    files: any;
+    promptId?: string;
+    contextOptimization: boolean;
+    chatMode: 'discuss' | 'build';
+    factoryPhase?: 'discovery' | 'implementation' | 'delivery' | null;
+    designScheme?: DesignScheme;
+    supabase?: {
+      isConnected: boolean;
+      hasSelectedProject: boolean;
+      credentials?: {
+        anonKey?: string;
+        supabaseUrl?: string;
       };
-      maxLLMSteps: number;
-    }>();
+    };
+    maxLLMSteps: number;
+  }>();
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = getApiKeysFromCookie(cookieHeader);
@@ -401,6 +411,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               contextOptimization,
               contextFiles: filteredFiles,
               chatMode,
+              factoryPhase,
               designScheme,
               summary,
               messageSliceId,
@@ -447,6 +458,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           contextOptimization,
           contextFiles: filteredFiles,
           chatMode,
+          factoryPhase,
           designScheme,
           summary,
           messageSliceId,

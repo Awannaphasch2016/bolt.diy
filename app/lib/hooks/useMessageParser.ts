@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { walkthroughPreviewVisible } from '~/lib/factoryPhase';
+import { walkthroughPhase } from '~/lib/factoryRun';
 import { getMessageText } from '~/lib/persistence/messageMigration';
 import { EnhancedStreamingMessageParser } from '~/lib/runtime/enhanced-message-parser';
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -11,7 +13,10 @@ const messageParser = new EnhancedStreamingMessageParser({
     onArtifactOpen: (data) => {
       logger.trace('onArtifactOpen', data);
 
-      workbenchStore.showWorkbench.set(true);
+      if (walkthroughPreviewVisible(walkthroughPhase.get())) {
+        workbenchStore.showWorkbench.set(true);
+      }
+
       workbenchStore.addArtifact(data);
     },
     onArtifactClose: (data) => {

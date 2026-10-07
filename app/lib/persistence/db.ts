@@ -2,12 +2,14 @@ import type { UIMessage } from 'ai';
 import { migrateLegacyMessages } from './messageMigration';
 import type { Snapshot } from './types'; // Import Snapshot type
 import type { ChatHistoryItem } from './useChatHistory';
+import type { FactoryRunRecord } from '~/lib/factoryRun';
 import { createScopedLogger } from '~/utils/logger';
 
 export interface IChatMetadata {
-  gitUrl: string;
+  gitUrl?: string;
   gitBranch?: string;
   netlifySiteId?: string;
+  factory?: FactoryRunRecord;
 }
 
 const logger = createScopedLogger('ChatHistory');
