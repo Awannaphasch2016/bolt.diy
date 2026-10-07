@@ -14,10 +14,12 @@ import {
   duplicateChat,
   createChatFromMessages,
   setSnapshot,
+  updateChatMetadata,
   type IChatMetadata,
 } from './db';
 import { createMessage, getMessageAnnotations, hasMessageFlag, type AnyPart } from './messageMigration';
 import type { Snapshot } from './types';
+import type { FactoryRunRecord } from '~/lib/factoryRun';
 import type { FileMap } from '~/lib/stores/files';
 import { logStore } from '~/lib/stores/logs'; // Import logStore
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -295,6 +297,22 @@ ${value.content}
   return {
     ready: !mixedId || ready,
     initialMessages,
+    saveFactoryRun: async (factory: FactoryRunRecord) => {
+      const next = { ...chatMetadata.get(), factory };
+      chatMetadata.set(next);
+
+      const id = chatId.get();
+
+      if (!db || !id) {
+        return;
+      }
+
+      try {
+        await updateChatMetadata(db, id, next);
+      } catch (error) {
+        console.error(error);
+      }
+    },
     updateChatMestaData: async (metadata: IChatMetadata) => {
       const id = chatId.get();
 

@@ -5,6 +5,8 @@ import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { PromptLibrary } from '~/lib/common/prompt-library';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import { getSystemPrompt } from '~/lib/common/prompts/prompts';
+import type { FactoryPhase } from '~/lib/factoryPhase';
+import { appendFactoryPhaseSystemPrompt, factoryPhaseSystemPrompt } from '~/lib/factoryPhasePrompt';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createMessage, getMessageText } from '~/lib/persistence/messageMigration';
 import type { DesignScheme } from '~/types/design-scheme';
@@ -86,6 +88,7 @@ export async function streamText(props: {
   summary?: string;
   messageSliceId?: number;
   chatMode?: 'discuss' | 'build';
+  factoryPhase?: FactoryPhase | null;
   designScheme?: DesignScheme;
 
   /*
@@ -107,6 +110,7 @@ export async function streamText(props: {
     contextFiles,
     summary,
     chatMode,
+    factoryPhase,
     designScheme,
     onChunk,
   } = props;
@@ -342,6 +346,14 @@ export async function streamText(props: {
     ...forwardedOptions
   } = filteredOptions as StreamingOptions & Record<string, unknown>;
 
+  const phasePrompt = factoryPhaseSystemPrompt(factoryPhase ?? null);
+  const baseSystem = chatMode === 'build' ? systemPrompt : discussPrompt();
+
+  const system =
+    factoryPhase === 'discovery' || factoryPhase === 'delivery'
+      ? phasePrompt
+      : appendFactoryPhaseSystemPrompt(baseSystem, factoryPhase ?? null);
+
   const streamParams = {
     model: provider.getModelInstance({
       model: modelDetails.name,
@@ -349,7 +361,7 @@ export async function streamText(props: {
       apiKeys,
       providerSettings,
     }),
-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
+    system,
     ...tokenParams,
     messages: await convertToModelMessages(processedMessages as any),
     ...forwardedOptions,

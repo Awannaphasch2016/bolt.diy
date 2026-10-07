@@ -59,6 +59,7 @@ interface ChatBoxProps {
   onWebSearchResult?: (result: string) => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
+  walkthrough?: boolean;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;
   selectedElement?: ElementInfo | null;
@@ -121,6 +122,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               />
               {(props.providerList || []).length > 0 &&
                 props.provider &&
+                !props.walkthrough &&
                 !LOCAL_PROVIDERS.includes(props.provider.name) && (
                   <APIKeyManager
                     provider={props.provider}
@@ -142,16 +144,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
         }}
       />
-      <ClientOnly>
-        {() => (
-          <ScreenshotStateManager
-            setUploadedFiles={props.setUploadedFiles}
-            setImageDataList={props.setImageDataList}
-            uploadedFiles={props.uploadedFiles}
-            imageDataList={props.imageDataList}
-          />
-        )}
-      </ClientOnly>
+      {!props.walkthrough && (
+        <ClientOnly>
+          {() => (
+            <ScreenshotStateManager
+              setUploadedFiles={props.setUploadedFiles}
+              setImageDataList={props.setImageDataList}
+              uploadedFiles={props.uploadedFiles}
+              imageDataList={props.imageDataList}
+            />
+          )}
+        </ClientOnly>
+      )}
       {props.selectedElement && (
         <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-bolt-elements-borderColor text-bolt-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
           <div className="flex gap-2 items-center lowercase">
@@ -217,7 +221,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               event.preventDefault();
 
               if (props.isStreaming) {
-                props.handleStop?.();
                 return;
               }
 
@@ -238,7 +241,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             minHeight: props.TEXTAREA_MIN_HEIGHT,
             maxHeight: props.TEXTAREA_MAX_HEIGHT,
           }}
-          placeholder={props.chatMode === 'build' ? 'How can Bolt help you today?' : 'What would you like to discuss?'}
+          placeholder={
+            props.walkthrough
+              ? 'Describe the page'
+              : props.chatMode === 'build'
+                ? 'How can Bolt help you today?'
+                : 'What would you like to discuss?'
+          }
           translate="no"
         />
         <ClientOnly>
@@ -262,35 +271,45 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         </ClientOnly>
         <div className="flex justify-between items-center text-sm p-4 pt-2">
           <div className="flex gap-1 items-center">
-            <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
-            <McpTools />
-            <IconButton title="Upload file" className="transition-all" onClick={() => props.handleFileUpload()}>
-              <div className="i-ph:paperclip text-xl"></div>
-            </IconButton>
-            <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
-            <IconButton
-              title="Enhance prompt"
-              disabled={props.input.length === 0 || props.enhancingPrompt}
-              className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
-              onClick={() => {
-                props.enhancePrompt?.();
-                toast.success('Prompt enhanced!');
-              }}
-            >
-              {props.enhancingPrompt ? (
-                <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl animate-spin"></div>
-              ) : (
-                <div className="i-bolt:stars text-xl"></div>
-              )}
-            </IconButton>
+            {!props.walkthrough && (
+              <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
+            )}
+            {!props.walkthrough && <McpTools />}
+            {!props.walkthrough && (
+              <IconButton title="Upload file" className="transition-all" onClick={() => props.handleFileUpload()}>
+                <div className="i-ph:paperclip text-xl"></div>
+              </IconButton>
+            )}
+            {!props.walkthrough && (
+              <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
+            )}
+            {!props.walkthrough && (
+              <IconButton
+                title="Enhance prompt"
+                disabled={props.input.length === 0 || props.enhancingPrompt}
+                className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
+                onClick={() => {
+                  props.enhancePrompt?.();
+                  toast.success('Prompt enhanced!');
+                }}
+              >
+                {props.enhancingPrompt ? (
+                  <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl animate-spin"></div>
+                ) : (
+                  <div className="i-bolt:stars text-xl"></div>
+                )}
+              </IconButton>
+            )}
 
-            <SpeechRecognitionButton
-              isListening={props.isListening}
-              onStart={props.startListening}
-              onStop={props.stopListening}
-              disabled={props.isStreaming}
-            />
-            {props.chatStarted && (
+            {!props.walkthrough && (
+              <SpeechRecognitionButton
+                isListening={props.isListening}
+                onStart={props.startListening}
+                onStop={props.stopListening}
+                disabled={props.isStreaming}
+              />
+            )}
+            {!props.walkthrough && props.chatStarted && (
               <IconButton
                 title="Discuss"
                 className={classNames(
@@ -328,7 +347,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Return</kbd> a new line
             </div>
           ) : null}
-          <SupabaseConnection />
+          {!props.walkthrough && <SupabaseConnection />}
           <ExpoQrModal open={props.qrModalOpen} onClose={() => props.setQrModalOpen(false)} />
         </div>
       </div>
