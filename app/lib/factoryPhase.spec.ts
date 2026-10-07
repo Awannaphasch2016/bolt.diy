@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { factoryRunFromMetadata, progressForRun } from './factoryRun';
 import {
   canContinueFactoryPhase,
   visibleComposerActions,
@@ -386,5 +387,54 @@ Here is what I understood. Approve to continue, or tell me what to change.
   it('hides the assistant model badge on factory phase chats', () => {
     expect(showAssistantModelAttribution(true)).toBe(false);
     expect(showAssistantModelAttribution(false)).toBe(true);
+  });
+
+  it('walks Bartel coffee from Discovery through Delivery and keeps the phase after reload', () => {
+    const discoveryOnly = [
+      { role: 'user', content: 'Bartel coffee' },
+      { role: 'assistant', content: 'What is on the page?' },
+    ];
+    expect(latestFactoryPhaseSummary(discoveryOnly, 'discovery')).toBeNull();
+    expect(canContinueFactoryPhase({ hasPhaseSummary: false, isStreaming: false })).toBe(false);
+    expect(walkthroughPreviewVisible('discovery')).toBe(false);
+
+    const discoverySummary = latestFactoryPhaseSummary(
+      [
+        ...discoveryOnly,
+        {
+          role: 'assistant',
+          content: '## Discovery summary\n- Page name: Bartel\n- One sentence: A coffee page\n- On the page: menu and hours',
+        },
+      ],
+      'discovery',
+    );
+    expect(discoverySummary).toContain('Bartel');
+    expect(canContinueFactoryPhase({ hasPhaseSummary: true, isStreaming: true })).toBe(false);
+    expect(canContinueFactoryPhase({ hasPhaseSummary: discoverySummary != null, isStreaming: false })).toBe(true);
+
+    const implementation = {
+      phase: nextFactoryPhase('discovery')!,
+      approved: ['discovery' as const],
+      comments: [],
+    };
+    expect(implementation.phase).toBe('implementation');
+    expect(walkthroughPreviewVisible(implementation.phase)).toBe(true);
+    expect(isFactoryPhaseUnlocked('delivery', progressForRun(implementation, true))).toBe(false);
+
+    const delivery = {
+      phase: nextFactoryPhase('implementation')!,
+      approved: ['discovery' as const, 'implementation' as const],
+      comments: [],
+    };
+    expect(delivery.phase).toBe('delivery');
+    expect(walkthroughPreviewVisible(delivery.phase)).toBe(true);
+    expect(
+      latestFactoryPhaseSummary(
+        [{ role: 'assistant', content: '## Delivery summary\n- Bartel coffee page is ready\n- Menu and hours are on the page' }],
+        'delivery',
+      ),
+    ).not.toBeNull();
+    expect(nextFactoryPhase('delivery')).toBeNull();
+    expect(factoryRunFromMetadata({ factory: delivery }).phase).toBe('delivery');
   });
 });

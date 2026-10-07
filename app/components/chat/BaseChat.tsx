@@ -414,7 +414,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 })}
               >
                 <div className="flex flex-col gap-2">
-                  {deployAlert && (
+                  {deployAlert && !walkthrough && (
                     <DeployChatAlert
                       alert={deployAlert}
                       clearAlert={() => clearDeployAlert?.()}
@@ -424,7 +424,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       }}
                     />
                   )}
-                  {supabaseAlert && (
+                  {supabaseAlert && !walkthrough && (
                     <SupabaseChatAlert
                       alert={supabaseAlert}
                       clearAlert={() => clearSupabaseAlert?.()}

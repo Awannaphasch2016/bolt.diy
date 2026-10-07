@@ -17,10 +17,16 @@ import {
   nextFactoryPhase,
   walkthroughPreviewVisible,
 } from '~/lib/factoryPhase';
-import { factoryRunFromMetadata, progressForRun, walkthroughPhase, type FactoryRunRecord } from '~/lib/factoryRun';
+import {
+  factoryRunFromMetadata,
+  factoryRunToRestore,
+  progressForRun,
+  walkthroughPhase,
+  type FactoryRunRecord,
+} from '~/lib/factoryRun';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { useSettings } from '~/lib/hooks/useSettings';
-import { description, useChatHistory, chatMetadata } from '~/lib/persistence';
+import { description, useChatHistory, chatId, chatMetadata } from '~/lib/persistence';
 import { getMessageText, createMessage, type AnyPart } from '~/lib/persistence/messageMigration';
 import { chatStore } from '~/lib/stores/chat';
 import { logStore } from '~/lib/stores/logs';
@@ -130,6 +136,7 @@ export const ChatImpl = memo(
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
     const [factoryRun, setFactoryRun] = useState(() => factoryRunFromMetadata(chatMetadata.get()));
+    const restoredChatId = useRef<string | undefined>(undefined);
     const [approvalPending, setApprovalPending] = useState(false);
     const phaseRef = useRef(factoryRun.phase);
     phaseRef.current = factoryRun.phase;
@@ -642,6 +649,18 @@ export const ChatImpl = memo(
       },
       [input],
     );
+
+    useEffect(() => {
+      const restored = factoryRunToRestore(ready, chatId.get(), restoredChatId.current, chatMetadata.get());
+
+      if (!restored) {
+        return;
+      }
+
+      restoredChatId.current = restored.chatId;
+      setFactoryRun(restored.run);
+      setChatMode(factoryPhaseChatMode(restored.run.phase) === 'build' ? 'build' : 'discuss');
+    }, [ready, initialMessages]);
 
     useEffect(() => {
       walkthroughPhase.set(factoryRun.phase);

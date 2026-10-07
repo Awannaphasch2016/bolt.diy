@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factoryRunFromMetadata, progressForRun } from './factoryRun';
+import { factoryRunFromMetadata, factoryRunToRestore, progressForRun } from './factoryRun';
 
 describe('factoryRun', () => {
   it('starts a missing record at Discovery', () => {
@@ -28,6 +28,21 @@ describe('factoryRun', () => {
       approved: ['discovery'],
       comments: [{ phase: 'discovery', body: 'Hero only' }],
     });
+  });
+
+  it('restores a saved phase once the reloaded chat is ready', () => {
+    const metadata = {
+      factory: { phase: 'delivery', approved: ['discovery', 'implementation'], comments: [] },
+    };
+
+    expect(factoryRunToRestore(false, 'chat-1', undefined, metadata)).toBeNull();
+    expect(factoryRunToRestore(true, undefined, undefined, metadata)).toBeNull();
+    expect(factoryRunToRestore(true, 'chat-1', undefined, {})).toBeNull();
+
+    const restored = factoryRunToRestore(true, 'chat-1', undefined, metadata);
+    expect(restored?.run.phase).toBe('delivery');
+    expect(restored?.run.approved).toEqual(['discovery', 'implementation']);
+    expect(factoryRunToRestore(true, 'chat-1', restored?.chatId, metadata)).toBeNull();
   });
 
   it('does not treat Discovery messages as Implementation having started', () => {

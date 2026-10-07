@@ -23,6 +23,27 @@ function isFactoryPhase(value: unknown): value is FactoryPhase {
   return FACTORY_PHASES.includes(value as FactoryPhase);
 }
 
+/**
+ * A reload should restore the saved phase once, after the chat record is ready.
+ * Later saves of the same chat must not replace the phase the person just changed.
+ */
+export function factoryRunToRestore(
+  ready: boolean,
+  chatId: string | undefined,
+  alreadyRestoredChatId: string | undefined,
+  metadata: { factory?: unknown } | undefined,
+): { chatId: string; run: FactoryRunRecord } | null {
+  if (!ready || !chatId || chatId === alreadyRestoredChatId) {
+    return null;
+  }
+
+  if (!metadata || metadata.factory == null) {
+    return null;
+  }
+
+  return { chatId, run: factoryRunFromMetadata(metadata) };
+}
+
 /** Restores a saved run. A missing or broken record starts at Discovery. */
 export function factoryRunFromMetadata(metadata: { factory?: unknown } | undefined): FactoryRunRecord {
   const factory = metadata?.factory;
